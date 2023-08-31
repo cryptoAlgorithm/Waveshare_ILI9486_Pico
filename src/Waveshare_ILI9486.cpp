@@ -63,11 +63,23 @@ namespace
 	constexpr unsigned int LCD_RST = 12; // 8;  //  LCD Reset
 	constexpr unsigned int LCD_DC = 14; // 7;  //  LCD Data/Control
 
-	constexpr unsigned int TP_CS = 17;   // 4;
 	constexpr unsigned int TP_IRQ = 25;  // 3
 	constexpr unsigned int TP_BUSY = 27; // 6
 
 	constexpr unsigned int SD_CS = 16;   // 5;
+
+#elif defined(ARDUINO_ARCH_RP2040)
+
+	constexpr unsigned int LCD_CS = 5;   //  LCD Chip Select
+	constexpr unsigned int LCD_BL = 9;   //  LCD Backlight
+	constexpr unsigned int LCD_RST = 10; //  LCD Reset
+	constexpr unsigned int LCD_DC = 11;  //  LCD Data/Control
+
+	constexpr unsigned int TP_CS = 7;    // UNUSED
+	constexpr unsigned int TP_IRQ = 8;   // UNUSED
+	constexpr unsigned int TP_BUSY = 12; // UNUSED
+
+	constexpr unsigned int SD_CS = 13;   // UNUSED
 
 #else
 
@@ -92,7 +104,7 @@ namespace
 	//  Data sheets says min clock width is 66ns, for a max clock of 15 MHz.  Except, this
 //  thing isn't *actually* SPI!  It's a 16 bit shift register connected to the parallel
 //  interface, and that can run at 20 Mhz
-	SPISettings _tftSpiSettingsWrite(20000000, MSBFIRST, SPI_MODE0);
+	SPISettings _tftSpiSettingsWrite(150'000'000, MSBFIRST, SPI_MODE0);
 
 	//  TFT reads are slower, 150 ns period.
 	//  Nevermind, Waveshare shield doesn't support reads at all!
@@ -104,8 +116,11 @@ namespace
 
 	inline void lcdWriteReg(uint8_t reg)
 	{
-
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_clr = (1ul << LCD_DC);
+#else
 		digitalWrite(LCD_DC, LOW);
+#endif
 #ifdef ARDUINO_ESP32_DEV
 		SPI.write16(reg);
 #else
@@ -116,12 +131,16 @@ namespace
 
 	inline void lcdWriteData(uint8_t data)
 	{
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_set = (1ul << LCD_DC);
+#else
 		digitalWrite(LCD_DC, HIGH);
+#endif
 #ifdef ARDUINO_ESP32_DEV
 		SPI.write16(data);
 #else
-		SPI.transfer(0);
-		SPI.transfer(data);
+		uint8_t buf[] = { 0, data };
+		spi_write_blocking(spi0, buf, sizeof(buf));
 #endif
 	}
 
@@ -130,8 +149,8 @@ namespace
 #ifdef ARDUINO_ESP32_DEV
 		SPI.write16(data);
 #else
-		SPI.transfer(0);
-		SPI.transfer(data);
+		uint8_t buf[] = { 0, data };
+		spi_write_blocking(spi0, buf, sizeof(buf));
 #endif
 	}
 
@@ -257,6 +276,10 @@ namespace
 
 #ifdef ARDUINO_ESP32_DEV
 		SPI.writePixels((const uint8_t *)pData, count * 2);
+#elif defined(ARDUINO_ARCH_RP2040)
+    spi_set_format(spi0, 16, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST);
+    spi_write16_blocking(spi0, pData, count);
+		// spi_set_format(spi0, 8, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST);
 #else
 		while (count--)
 		{
@@ -292,13 +315,21 @@ namespace
 		//  time.
 		ActiveBounds b = {0, (uint8_t)(xStart >> 8), 0, (uint8_t)(xStart & 0xFF), 0, (uint8_t)(xEnd >> 8), 0, (uint8_t)(xEnd & 0xFF)};
 		lcdWriteReg(0x2a);
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_set = (1ul << LCD_DC);
+#else
 		digitalWrite(LCD_DC, HIGH);
-		SPI.writeBytes((byte *)&b, sizeof(b));
+#endif
+		spi_write_blocking(spi0, (byte *)&b, sizeof(b));
 
 		b = {0, (uint8_t)(yStart >> 8), 0, (uint8_t)(yStart & 0xFF), 0, (uint8_t)(yEnd >> 8), 0, (uint8_t)(yEnd & 0xFF)};
 		lcdWriteReg(0x2b);
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_set = (1ul << LCD_DC);
+#else
 		digitalWrite(LCD_DC, HIGH);
-		SPI.writeBytes((byte *)&b, sizeof(b));
+#endif
+		spi_write_blocking(spi0, (byte *)&b, sizeof(b));
 	}
 }
 
@@ -328,14 +359,18 @@ namespace Waveshare_ILI9486_Impl
 	void startWrite()
 	{
 		SPI.beginTransaction(_tftSpiSettingsWrite);
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_clr = (1ul << LCD_CS);
+#else
 		digitalWrite(LCD_CS, LOW);
+#endif
 	}
 
 	void initializeLcd()
 	{
 		//  Trigger hardware reset.
-		digitalWrite(LCD_RST, HIGH);
-		delay(5);
+		//digitalWrite(LCD_RST, HIGH);
+		//delay(5);
 		digitalWrite(LCD_RST, LOW);
 		delayMicroseconds(20);
 		digitalWrite(LCD_RST, HIGH);
@@ -441,10 +476,10 @@ namespace Waveshare_ILI9486_Impl
 
 			lcdWriteReg(0x11); // Sleep out
 
+			lcdWriteReg(0x29);  // Turn on display
+
 			//  Fill screen to black
 			writeFillRect2(0, 0, LCD_WIDTH, LCD_HEIGHT, 0x0000);
-
-			lcdWriteReg(0x29);  // Turn on display
 		}
 		endWrite();
 	}
@@ -466,7 +501,12 @@ namespace Waveshare_ILI9486_Impl
 
 	void endWrite()
 	{
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_set = (1ul << LCD_CS);
+#else
 		digitalWrite(LCD_CS, HIGH);
+#endif
+		
 		SPI.endTransaction();
 	}
 
