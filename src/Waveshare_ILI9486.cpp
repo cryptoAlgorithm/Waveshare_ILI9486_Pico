@@ -102,9 +102,9 @@ namespace
 	constexpr int16_t LCD_HEIGHT = 480;
 
 	//  Data sheets says min clock width is 66ns, for a max clock of 15 MHz.  Except, this
-//  thing isn't *actually* SPI!  It's a 16 bit shift register connected to the parallel
-//  interface, and that can run at 20 Mhz
-	SPISettings _tftSpiSettingsWrite(150'000'000, MSBFIRST, SPI_MODE0);
+	//  thing isn't *actually* SPI!  It's a 16 bit shift register connected to the parallel
+	//  interface, and that can run at 20 Mhz (from testing this one runs at a max of 40MHz(!))
+	SPISettings _tftSpiSettingsWrite(40'000'000, MSBFIRST, SPI_MODE0);
 
 	//  TFT reads are slower, 150 ns period.
 	//  Nevermind, Waveshare shield doesn't support reads at all!
@@ -369,8 +369,8 @@ namespace Waveshare_ILI9486_Impl
 	void initializeLcd()
 	{
 		//  Trigger hardware reset.
-		//digitalWrite(LCD_RST, HIGH);
-		//delay(5);
+		digitalWrite(LCD_RST, HIGH);
+		delay(5);
 		digitalWrite(LCD_RST, LOW);
 		delayMicroseconds(20);
 		digitalWrite(LCD_RST, HIGH);
