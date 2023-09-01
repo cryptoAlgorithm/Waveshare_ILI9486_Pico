@@ -38,14 +38,14 @@ namespace
 	//  the reboot process.  D1 is Serial TX, you probably want that for debugging.
 	//  So, you can't plug the shield into a D1 R1, you need to map the pins.
 	//
-	constexpr unsigned int LCD_CS = D10; //  LCD Chip Select
-	constexpr unsigned int LCD_BL = D8;  //  LCD Backlight
-	constexpr unsigned int LCD_RST = D4;  //  LCD Reset
-	constexpr unsigned int LCD_DC = D3;  //  LCD Data/Control
+	#define LCD_CS D10 //  LCD Chip Select
+	#define LCD_BL D8  //  LCD Backlight
+	#define LCD_RST D4  //  LCD Reset
+	#define LCD_DC D3  //  LCD Data/Control
 
-	constexpr unsigned int TP_CS = D0;
+	#define TP_CS D0
 
-	constexpr unsigned int SD_CS = D2;
+	#define SD_CS D2
 #elif defined ARDUINO_ESP32_DEV
 
 	//  TO-DO - is this specific enough?  Pins below are for Wemos D1 R32, but that
@@ -58,43 +58,45 @@ namespace
 		digitalWrite(pin, val ? HIGH : LOW);
 	}
 
-	constexpr unsigned int LCD_CS = 5;  // 10; //  LCD Chip Select
-	constexpr unsigned int LCD_BL = 13; // 9;  //  LCD Backlight
-	constexpr unsigned int LCD_RST = 12; // 8;  //  LCD Reset
-	constexpr unsigned int LCD_DC = 14; // 7;  //  LCD Data/Control
+	#define LCD_CS 5  // 10; //  LCD Chip Select
+	#define LCD_BL 13 // 9;  //  LCD Backlight
+	#define LCD_RST 12 // 8;  //  LCD Reset
+	#define LCD_DC 14 // 7;  //  LCD Data/Control
 
-	constexpr unsigned int TP_IRQ = 25;  // 3
-	constexpr unsigned int TP_BUSY = 27; // 6
+	#define TP_IRQ 25  // 3
+	#define TP_BUSY 27 // 6
 
-	constexpr unsigned int SD_CS = 16;   // 5;
+	#define SD_CS 16   // 5;
 
 #elif defined(ARDUINO_ARCH_RP2040)
 
-	constexpr unsigned int LCD_CS = 5;   //  LCD Chip Select
-	constexpr unsigned int LCD_BL = 9;   //  LCD Backlight
-	constexpr unsigned int LCD_RST = 10; //  LCD Reset
-	constexpr unsigned int LCD_DC = 11;  //  LCD Data/Control
+  // LCD
+	#define LCD_CS 5   //  LCD Chip Select
+	// #define LCD_BL 0   //  LCD Backlight - unused
+	#define LCD_RST 10 //  LCD Reset
+	#define LCD_DC 11  //  LCD Data/Control
 
-	constexpr unsigned int TP_CS = 7;    // UNUSED
-	constexpr unsigned int TP_IRQ = 8;   // UNUSED
-	constexpr unsigned int TP_BUSY = 12; // UNUSED
+  // Touch panel
+	#define TP_CS 7    // UNUSED
+	#define TP_IRQ 8   // UNUSED
+	#define TP_BUSY 12 // UNUSED
 
-	constexpr unsigned int SD_CS = 13;   // UNUSED
+	#define SD_CS 13   // UNUSED
 
 #else
 
 	//GPIO config
 	//LCD
-	constexpr unsigned int LCD_CS = 10; //  LCD Chip Select
-	constexpr unsigned int LCD_BL = 9;  //  LCD Backlight
-	constexpr unsigned int LCD_RST = 8;  //  LCD Reset
-	constexpr unsigned int LCD_DC = 7;  //  LCD Data/Control
+	#define LCD_CS 10 //  LCD Chip Select
+	#define LCD_BL 9  //  LCD Backlight
+	#define LCD_RST 8  //  LCD Reset
+	#define LCD_DC 7  //  LCD Data/Control
 
-	constexpr unsigned int TP_CS = 4;
-	constexpr unsigned int TP_IRQ = 3;
-	constexpr unsigned int TP_BUSY = 6;
+	#define TP_CS 4
+	#define TP_IRQ 3
+	#define TP_BUSY 6
 
-	constexpr unsigned int SD_CS = 5;
+	#define SD_CS 5
 
 #endif
 	//  Dimensions in default rotation.
@@ -157,14 +159,17 @@ namespace
 
 	inline void lcdWriteData16(uint16_t data)
 	{
-		lcdWriteData(uint8_t(data >> 8));
-		lcdWriteDataContinue(uint8_t(data & 0xff));
+#ifdef ARDUINO_ARCH_RP2040
+		sio_hw->gpio_set = (1ul << LCD_DC);
+#else
+		digitalWrite(LCD_DC, HIGH);
+#endif
+		spi_write16_blocking(spi0, &data, 1);
 	}
 
 	inline void lcdWriteDataContinue16(uint16_t data)
 	{
-		lcdWriteDataContinue(uint8_t(data >> 8));
-		lcdWriteDataContinue(uint8_t(data & 0xff));
+		spi_write16_blocking(spi0, &data, 1);
 	}
 
 #ifdef ARDUINO_ARCH_AVR
@@ -277,9 +282,7 @@ namespace
 #ifdef ARDUINO_ESP32_DEV
 		SPI.writePixels((const uint8_t *)pData, count * 2);
 #elif defined(ARDUINO_ARCH_RP2040)
-    spi_set_format(spi0, 16, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST);
     spi_write16_blocking(spi0, pData, count);
-		// spi_set_format(spi0, 8, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST);
 #else
 		while (count--)
 		{
@@ -344,8 +347,10 @@ namespace Waveshare_ILI9486_Impl
 		pinMode(LCD_RST, OUTPUT);
 		digitalWrite(LCD_RST, HIGH);
 		pinMode(LCD_DC, OUTPUT);
+#ifdef LCD_BL
 		pinMode(LCD_BL, OUTPUT);
 		analogWrite(LCD_BL, 0);
+#endif
 
 		pinMode(TP_CS, OUTPUT);
 		digitalWrite(TP_CS, HIGH);
@@ -368,9 +373,11 @@ namespace Waveshare_ILI9486_Impl
 
 	void initializeLcd()
 	{
+    spi_set_format(spi0, 16, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST);
+
 		//  Trigger hardware reset.
-		digitalWrite(LCD_RST, HIGH);
-		delay(5);
+		// digitalWrite(LCD_RST, HIGH);
+		// delay(5);
 		digitalWrite(LCD_RST, LOW);
 		delayMicroseconds(20);
 		digitalWrite(LCD_RST, HIGH);
@@ -560,7 +567,9 @@ namespace Waveshare_ILI9486_Impl
 
 	void setScreenBrightness(uint8_t brightness)
 	{
+#ifdef LCD_BL
 		analogWrite(LCD_BL, brightness);
+#endif
 	}
 
 	unsigned int GetSdCardCS()
